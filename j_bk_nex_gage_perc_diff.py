@@ -5,14 +5,20 @@ Created on Tue Jun 10 09:52:00 2022
 percent difference of NEXRAD and Gage rainfall
 for breakpoint data
 
+using the resample function to sum from top to bottom
+
+removing rows with 0 values of either gages/nexrad
+
 @author: Michael Getachew Tadesse
 """
 import os
 import logging
 import datetime
+import numpy
 import pandas as pd
 import seaborn as sns
 import matplotlib.colors as mcolors
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
 
@@ -40,7 +46,7 @@ geoDat['name'] = pd.DataFrame(list(map(getName, geoDat['gage'])))
 # get unique names
 gageUnq = geoDat['name'].unique()
 
-print(gageUnq)
+# print(gageUnq)
 
 
 # get list of BK gages
@@ -61,12 +67,12 @@ for gg in gageUnq:
             
             os.chdir(gages)
             
-            print(gg, bk_gg)
+            # print(gg, bk_gg)
             
             # get year
             y1 = bk_gg.split('.csv')[0].split('_')
             y2 = y1[len(y1) - 1]
-            print(y2)
+            # print(y2)
 
             dat = pd.read_csv(bk_gg, header = None)[[0, 1, 2, 3]]
             dat.drop(dat.tail(1).index, inplace = True)
@@ -74,8 +80,19 @@ for gg in gageUnq:
             dat['date'] = pd.to_datetime(dat['date'])
             dat = dat.sort_values(by = 'date')
             
-            os.chdir(bk_stats)
-            dat.to_csv(gg + y2 + "_gage.csv")
+            # # save raw data
+            # os.chdir(bk_stats)
+            # dat.to_csv(gg + y2 + "_gage.csv")
+            
+            # aggregate data every 15 min
+            dat.set_index('date', inplace = True)
+            # gage_agg_15m = dat.groupby(pd.Grouper(freq='15Min')).aggregate(numpy.sum)
+            gage_agg_15m = dat.resample('15T', label = 'right',
+                                        closed = 'right').sum()
+            
+            
+            # os.chdir(bk_stats)
+            # gage_agg_15m.to_csv(gg + y2 + "_gage15m.csv")
             # print(dat)
             
             
@@ -109,18 +126,63 @@ for gg in gageUnq:
             nex_data = nex_data[['date', 'pixel', 'nex_value']]
             nex_data = nex_data.sort_values(by = 'date')
             
-            os.chdir(bk_stats)
-            nex_data.to_csv(gg + y2 + "_nex.csv")
-            # print(nex_data['time'].astype(str).iloc[0].split('.0'))
+            # os.chdir(bk_stats)
+            # nex_data.to_csv(gg + y2 + "_nex.csv")
+            
+            # aggregate data every 15 min
+            nex_data.set_index('date', inplace = True)
+            # nex_agg_15m = nex_data.groupby(pd.Grouper(freq='15Min')).aggregate(numpy.sum)
+            nex_agg_15m = nex_data.resample('15T', label = 'right',
+                                closed = 'right').sum()
+                        
+            # os.chdir(bk_stats)
+            # nex_agg_15m.to_csv(gg + y2 + "_nex15m.csv")
             
             
+            # set index for plotting
+            gage_agg_15m.reset_index(inplace = True)
+            nex_agg_15m.reset_index(inplace = True)
             
-            fig = plt.figure(figsize = (16,8))
-            plt.plot(dat['date'], dat['gage_value'], label = gg, c = "blue")
-            plt.plot(nex_data['date'], nex_data['nex_value'], label = pixel, c = "red")
-            plt.title(gg + " " + y2 + " Rainfall Event")
-            plt.ylabel('Breakpoint Rainfall (in)')
-            plt.legend()
+            # merge nexrad and gage data
+            datMerged = pd.merge(gage_agg_15m, nex_agg_15m, on = 'date', how = 'outer')
+
+            # using the maximum of the percent difference
+            datMerged['perc_diff'] = 2*100*(datMerged['gage_value'] - 
+                                datMerged['nex_value'])/(datMerged['gage_value'] 
+                                                + datMerged['nex_value'])
+            # print(datMerged)
+            
+            # remove 0s and NaNs
+            datMerged = datMerged[ ~( (datMerged['gage_value'].isna()) 
+                                  | (datMerged['nex_value'].isna())  
+                                  | (datMerged['gage_value'] == 0)
+                                  | (datMerged['nex_value'] == 0)
+                                                 ) ]
+            datMerged.reset_index(inplace = True)
+            
+            print(datMerged[datMerged['perc_diff'] == max(datMerged['perc_diff'])])
+            
+            
+            # datMerged.to_csv(gg + y2 + "_merged15m.csv")
+            
+            fig, axes = plt.subplots(2, 1, figsize = (16,8))
+            # fig = plt.figure(figsize = (16,8))
+            axes[0].plot(datMerged['date'], datMerged['gage_value'], label = gg, c = "blue")
+            axes[0].plot(datMerged['date'], datMerged['nex_value'], label = pixel, c = "red")
+            axes[0].set_title(gg + " " + y2 + " Rainfall Event")
+            # reduce number of plot ticks
+            axes[1].set_xlim([datMerged['date'][0], datMerged['date'][len(datMerged) - 1]])
+            axes[0].xaxis.set_major_locator(mdates.HourLocator(interval=12))
+            axes[0].set_ylabel('Breakpoint Rainfall (in)')
+            axes[0].grid()
+            axes[0].legend()
+            
+            axes[1].plot(datMerged['date'], datMerged['perc_diff'], c = "k")
+            # reduce number of plot ticks
+            axes[1].set_xlim([datMerged['date'][0], datMerged['date'][len(datMerged) - 1]])
+            axes[1].xaxis.set_major_locator(mdates.HourLocator(interval=12))
+            axes[1].set_ylabel('Percent Difference')
+            axes[1].grid()
             # plt.show()
             
-            plt.savefig(gg + "_" + y2 + ".jpeg", dpi = 400)
+            # plt.savefig(gg + "_" + y2 + ".jpeg", dpi = 400)
