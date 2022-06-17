@@ -34,13 +34,15 @@ plt.axhspan(8.7, 12.6, alpha = 0.45, color = "gold", label = "NOAA 25yr" )
 plt.axhspan(11, 18.2, alpha = 0.45, color = "violet", label = "NOAA 100yr" )
 
 plt.scatter(dat['Event'], dat['max_3day_accu'], 
-                c = dat['max_3day_accu'], marker ='s' , s = 150,
+                c = "k", marker ='s' , s = 150,
                     edgecolor = 'k')
+for i, txt in enumerate(dat['Name']):
+    plt.annotate(txt, (dat['Event'][i] - 0.5, dat['max_3day_accu'][i] - 1.0))
 
 
 # plt.fill_between(dat['event'], dat['max_3day_accu'], where = (dat['max_3day_accu'] > 6.09 ))
 
-plt.ylabel('3 Day Maximum Accumulated Rainfall Events (in)')
+plt.ylabel('3 Day Maximum Accumulated Rainfall (in)')
 plt.xlabel('Precipitation Events')
 plt.title('NOAA Atlas 14 Precipitation (in) Frequency Estimates (at Kissimmee station)')
 plt.legend(ncol = 2, fontsize = 15, loc = 'upper left')
